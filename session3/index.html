@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+
+	<head>
+		<meta charset="utf-8">
+
+		<title>Node.js Workshop - ASOS</title>
+
+		<meta name="description" content="Slides used on the Node.js Workshop">
+		<meta name="author" content="Marti Planellas">
+
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+		<link rel="stylesheet" href="../css/reveal.css">
+		<link rel="stylesheet" href="../css/theme/black.css" id="theme">
+
+		<!-- Code syntax highlighting -->
+		<link rel="stylesheet" href="../lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? '../css/print/pdf.css' : '../css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+
+		<!--[if lt IE 9]>
+		<script src="lib/js/html5shiv.js"></script>
+		<![endif]-->
+	</head>
+
+	<body>
+
+		<div class="reveal">
+			<div class="slides">
+				<section>
+					<h1>Node.js Workshop</h1>
+					<h3>Session 3</h3>
+				</section>
+
+				<section>
+					<h2>The history</h2>
+					<p>
+						We want: Low latency, bi-directional, event driven messages. Historically called <strong>Comet</strong>
+					</p>
+          <p>
+  					<ul>
+  						<li>
+  							Hidden iframe: As events occur, the iframe is gradually filled with script tags, containing JavaScript to be executed in the browser.
+  						</li>
+  						<li>
+  							Ajax long polling: Ajax request which may wait for data to be available before responding, immediately after the response another request is made.
+  						</li>
+  						<li>
+  							Script tag long polling: Same idea as ajax but creating a script tag for every request.
+  						</li>
+  					</ul>
+          </p>
+				</section>
+
+        <section>
+          <h2>Websockets</h2>
+          <p>
+            All these implementations were flawed since they failed to maintain a persistent connection with the server and receive asyncronous events directly from the server
+          </p>
+        </section>
+
+        <section>
+          <h2>Websockets: The HTML5 implementation</h2>
+          <p>
+            WebSocket is a protocol providing full-duplex communication channels over a single TCP connection.
+          </p>
+          <img width="40%" src="img/connection.png" />
+        </section>
+
+				<section>
+					<h2>Websockets</h2>
+					<p>
+						The raw implementation looks something like this:
+<pre><code class="hljs js" data-trim contenteditable>
+let exampleSocket = new WebSocket("ws://www.example.com/socketserver", "protocolOne");
+exampleSocket.onopen = function (event) {
+  exampleSocket.send("Here's some text that the server is urgently awaiting!");
+};
+exampleSocket.onmessage = function (event) {
+  console.log(event.data);
+};
+</code></pre>
+					</p>
+				</section>
+
+				<section>
+					<h2>Websockets</h2>
+					<p>
+						So what's the support for this thing?
+					</p>
+					<img src="img/caniuse.png" />
+				</section>
+
+				<section>
+					<h2>Socket.io</h2>
+					<p>
+						Enables realtime, bi-directional communication between web clients and servers. It has two parts: a client-side library that runs in the browser, and a server-side library for node.js. Both components have a nearly identical API. Like node.js, it is event-driven.
+					</p>
+				</section>
+
+				<section>
+					<h2>Socket.io</h2>
+					<p>
+						Primarily uses the WebSocket protocol with polling as a fallback option, while providing the same interface. Although it can be used as simply a wrapper for WebSocket, it provides many more features, including broadcasting to multiple sockets, storing data associated with each client, and asynchronous I/O.
+					</p>
+				</section>
+
+				<section>
+					<h2>Let's implement it!</h2>
+Install Socket.io
+<pre><code class="hljs sh" data-trim contenteditable>
+npm i socket.io --save
+</code></pre>
+				</section>
+
+				<section>
+					<h2>Hooking into express</h2>
+					<p>
+						Socket.io can hook into express to learn which port to use and to serve its frontend library.
+					</p>
+<pre><code class="hljs js" data-trim contenteditable>
+const server = app.listen(config.PORT, () => console.log(`Server listening on localhost:${config.PORT}`));
+const io  = require('socket.io')(server);
+</code></pre>
+				</section>
+
+				<section>
+					<h2>Listening for a connection</h2>
+					<p>
+						When a new <code>connection</code> happens the <code>socket</code> variable passed on the handler represents the newly connected user.
+						Any events emitted or received on <code>socket</code> refer only to a single user, on the other hand all events on <code>io</code> are broadcasted to all connected users.
+					</p>
+<pre><code class="hljs js" data-trim contenteditable>
+io.on('connection', function (socket) {
+	socket.emit('an event', {data: 'some payload'}); //This event is only sent to a singular user
+  socket.on('another event', function(data) {
+		io.emit('broadcast event', data); //This event is sent to everyone (broadcasted)
+	});
+});
+</code></pre>
+				</section>
+
+				<section>
+					<h2>A real example (backend)</h2>
+					<p>
+						Keep track and display the number of connected users.
+					</p>
+<pre><code class="hljs js" data-trim contenteditable>
+let connected = 0;
+
+const updateOnline = () => io.emit('online', { users: connected }); //Broadcast the number of connected users
+
+io.on('connection', function (socket) {
+	//On new connection increment the number of users
+  connected++;
+  updateOnline();
+
+  socket.on('disconnect', function() {
+		//On disconnect decrement the number of users
+    connected--;
+    updateOnline();
+  });
+});
+</code></pre>
+				</section>
+
+				<section>
+					<h2>A real example (frontend)</h2>
+					<p>
+						First of all, we need to include the frontend library.<br />
+						We'll also add some HTML to display the information.
+					</p>
+<pre><code class="hljs html" data-trim contenteditable>
+<!-- views/index.ejs -->
+<h1>Online users: <span id="online"></span></h1>
+<script src="/socket.io/socket.io.js"></script>
+</code></pre>
+				</section>
+
+				<section>
+					<h2>A real example (frontend)</h2>
+<p>
+	Then we can connect to the server and we're ready to listen and send events.
+</p>
+<pre><code class="hljs js" data-trim contenteditable>
+//public/js/main.js
+var App = {
+  init: function() {
+    this.onlineEl = document.getElementById('online');
+    this.socket = io.connect('http://localhost:9090');
+
+    this.subEvents();
+  },
+
+  subEvents: function() {
+    var that = this;
+
+    this.socket.on('online', function (data) {
+      that.onlineEl.innerHTML = data.users;
+    });
+  }
+};
+App.init();
+</code></pre>
+<small>Note: We don't have ES6 on the frontend for now</small>
+				</section>
+
+				<section>
+					<h1>Exercise 1: The click counter</h1>
+					<p>
+						Using what we just learned create the code to keep track how many clicks
+						in total a <code>&lt;button&gt;</code> receives, this should be in sync on all connected
+						clients.
+					<p>
+						Live code
+					</p>
+				</section>
+
+				<section>
+					<h2>Exercice: Click counter</h2>
+					<p>
+						Implement a click counter that counts the clicks on a <code>&lt;button&gt;</code>, this must be syncronized on all connected clients.
+					</p>
+				</section>
+
+				<section>
+					<h2>What's the catch?</h2>
+					<p>
+						Websockets are often difficult to scale, specially if you broadcast.
+					</p>
+				</section>
+
+				<section>
+					<h2>Solution? Pusher</h2>
+					<p>
+						<a href="https://pusher.com" target="_blank">Pusher</a> is websockets as a service, you connect your frontent to it, connect your backend and it takes care of the communication and the scale.
+					</p>
+				</section>
+
+				<section>
+					<h2>One more thing...</h2>
+					<p>
+						What if I tell you there's a tool out there that does all of what we implemented out of the box?
+					</p>
+				</section>
+
+				<section>
+					<h2>Meteor</h2>
+					<p>
+						<a href="https://www.meteor.com/" target="_blank">Meteor</a> it's a platform that allows you to build isomorphic real-time apps in a breeze.
+					</p>
+				</section>
+
+
+				<section>
+					<h2>What we learned on this session</h2>
+					<ul>
+						<li>
+							Websockets: What they are, where they come from
+						</li>
+						<li>
+							Socket.io: How to implement it
+						</li>
+						<li>
+							Meteor: What it is, when and how to use it.
+						</li>
+					</ul>
+				</section>
+
+			</div>
+
+		</div>
+
+		<script src="../lib/js/head.min.js"></script>
+		<script src="../js/reveal.js"></script>
+
+		<script>
+
+			// Full list of configuration options available at:
+			// https://github.com/hakimel/reveal.js#configuration
+			Reveal.initialize({
+				controls: true,
+				progress: true,
+				history: true,
+				center: true,
+
+				transition: 'convex', // none/fade/slide/convex/concave/zoom
+
+				// Optional reveal.js plugins
+				dependencies: [
+					{ src: '../lib/js/classList.js', condition: function() { return !document.body.classList; } },
+					{ src: '../plugin/markdown/marked.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: '../plugin/markdown/markdown.js', condition: function() { return !!document.querySelector( '[data-markdown]' ); } },
+					{ src: '../plugin/highlight/highlight.js', async: true, callback: function() { hljs.configure({tabReplace: '  '}); hljs.initHighlightingOnLoad(); } },
+					{ src: '../plugin/zoom-js/zoom.js', async: true },
+					{ src: '../plugin/notes/notes.js', async: true }
+				]
+			});
+
+		</script>
+
+	</body>
+</html>
